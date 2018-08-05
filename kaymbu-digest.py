@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+
+##
+# Kaymbu digest image downloader.
+# Copyright 2018 Matthew F. Coates
+# http://github.com/mattjackets
+# See LICENSE.txt for license terms.
+##
+
 import imaplib
 import email
 import quopri
