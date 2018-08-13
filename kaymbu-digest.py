@@ -21,11 +21,13 @@ import config
 
 def get_name_and_link(email_msg):
   email_message = email.message_from_string(email_msg)
-  name=re.search(r'\s(.*)\'s Digest from ',email_message['Subject']).group(1)
+  name=re.search(r'(.*)\'s Digest from ',email_message['Subject']).group(1)
  
   html_block=get_first_html_block(email_message)
   decoded_html_block=quopri.decodestring(html_block)
-  soup=BeautifulSoup(decoded_html_block,'lxml')
+  # Kaymbu emails contain invalid HTML, there is a closing html tab before the body, remove it and add it to the end
+  fixed_html=decoded_html_block.replace("</html>","",1)+"</html>\r\n"
+  soup=BeautifulSoup(fixed_html,'lxml')
   link=soup.find('a',text="Click here to download all images")['href']
   return (name,link)
 
