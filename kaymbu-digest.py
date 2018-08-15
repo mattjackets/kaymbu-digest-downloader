@@ -21,7 +21,7 @@ import config
 
 def get_name_and_link(email_msg):
   email_message = email.message_from_string(email_msg)
-  name=re.search(r'(.*)\'s Digest from ',email_message['Subject']).group(1)
+  name=re.search(r'.*\s*([A-Z][a-z]+)\'s Digest from ',email_message['Subject']).group(1)
  
   html_block=get_first_html_block(email_message)
   decoded_html_block=quopri.decodestring(html_block)
