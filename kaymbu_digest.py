@@ -16,12 +16,16 @@ import requests
 import zipfile
 import io
 import os
+import PIL.Image
+import PIL.ExifTags
 
 import config
 
-def get_name_and_link(email_msg):
+def get_name_link_date(email_msg):
   email_message = email.message_from_string(email_msg)
-  name=re.search(r'.*\s*([A-Z][a-z]+)\'s Digest from ',email_message['Subject']).group(1)
+  matches=re.search(r'.*\s*([A-Z][a-z]+)\'s Digest from .* for (\d?\d\/\d?\d\/\d\d)',email_message['Subject'])
+  name=matches.group(1)
+  date=matches.group(2)
  
   html_block=get_first_html_block(email_message)
   decoded_html_block=quopri.decodestring(html_block)
@@ -36,7 +40,7 @@ def get_name_and_link(email_msg):
     moment_img_tags=soup.findAll('img',alt="Download this moment")
     if (len(moment_img_tags) == 1):
       link=moment_img_tags[0].parent['href']
-  return (name,link)
+  return (name,link,date)
 
 def get_first_html_block(email_message_instance):
     maintype = email_message_instance.get_content_maintype()
@@ -55,13 +59,12 @@ def get_momentIds(url):
   return moments
 
 ###
-# moments should be a list of moment ids.
+# moments should be a moment id.
 # returns a tuple of the file content and the Content-disposition header
-# If more thn one moment id is in the list, content will be a zip archive
 # the content-disposition header is useful for getting the server-assigned file name for the image
 ###
-def get_photos(moments):
-  r=requests.get("http://export.kaymbu.com/download/moments?%s"%'&'.join(moments))
+def get_photo(moment):
+  r=requests.get("http://export.kaymbu.com/download/moments?%s"%moment)
   if (r.status_code != 200):
     raise ValueError("Unsuccessful requesting photo(s). Code %d returned."%r.status_code)
   return r.content,r.headers['Content-Disposition']
@@ -76,6 +79,14 @@ def get_new_digest_message_uids(mail):
   result,search_results=mail.uid('search',None,'(UNSEEN SUBJECT "s Digest from ")')
   message_uids=search_results[0].split()
   return message_uids
+
+def get_exif(img):
+  exif = {
+    PIL.ExifTags.TAGS[k]: v
+    for k, v in img._getexif().items()
+    if k in PIL.ExifTags.TAGS
+  }
+  return exif
   
 if __name__=="__main__":
   mail=get_mail_connection(config.imap_server,config.mail_username,config.mail_password)
@@ -93,9 +104,8 @@ if __name__=="__main__":
     #if result != "OK":
     #  print "Problem setting message %s unseen"%uid
     anemail=msg_data[0][1]
-    name,link=get_name_and_link(anemail)
-    #print name
-    #print link
+    name,link,date=get_name_link_date(anemail)
+    print "%s's photos from %s"%(name,date)
     
     path=os.path.join(config.output_path,name)
     try:
@@ -109,15 +119,25 @@ if __name__=="__main__":
       print repr(e)
       continue
     try:
+      serial=0
       for moment in momentIds:
-        photo,content_disposition=get_photos([moment])
-        filename=re.search(r'filename=(.*)',content_disposition).group(1)
-        filepath=os.path.join(path,filename)
+        photo,content_disposition=get_photo(moment)
+        image=PIL.Image.open(io.BytesIO(photo))
+        exif_data=get_exif(image)
+        try:
+          photo_taken_at=exif_data['DateTime'].replace(':','-')
+        except KeyError:
+          # the date/time exif data is missing, use the date from the email subject + serial number
+          serial+=1
+          sdate=[int(x) for x in date.split('/')]
+          photo_taken_at="20%02d-%02d-%02d-%03d"%(sdate[2],sdate[0],sdate[1],serial)
+        filepath=os.path.join(path,photo_taken_at+".jpg")
         if (os.path.isfile(filepath)):
           filepath="%s-%s"%(filepath,moment) #the file exists, append the moment id to uniquify
         f=open(filepath,'w')
         f.write(photo)
         f.close()
+        print "Moment %s saved at %s"%(moment,filepath)
     except ValueError as e:
       print repr(e)
       continue
