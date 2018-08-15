@@ -13,7 +13,6 @@ import quopri
 import re
 from bs4 import BeautifulSoup
 import requests
-import zipfile
 import io
 import os
 import PIL.Image

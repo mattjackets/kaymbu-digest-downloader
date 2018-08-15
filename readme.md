@@ -16,9 +16,9 @@ Required Python modules:
 * re
 * BeautifulSoup
 * requests
-* zipfile
 * io
 * os
+* PIL
 
 ## Deployment
 
@@ -31,6 +31,5 @@ I recommend setting up cron to run this weekly, but you can run it however you p
 ## License
 
 This project is licensed under the BSD License - see the [LICENSE.txt](LICENSE.txt) file for details
-
 
 
