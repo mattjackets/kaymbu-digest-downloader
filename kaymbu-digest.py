@@ -53,38 +53,39 @@ def get_photo_zip(moments):
     raise ValueError("Unsuccessful requesting zip archive. Code %d returned."%r.status_code)
   return r.content
 
-mail = imaplib.IMAP4_SSL(config.imap_server)
-mail.login(config.mail_username,config.mail_password)
-mail.select("inbox")
-
-result,search_results=mail.uid('search',None,'(UNSEEN SUBJECT "s Digest from ")')
-message_uids=search_results[0].split()
-print "%d new kaymbu digest messages"%len(message_uids)
-for uid in message_uids:
-  print "Starting work on message %s"%uid
-  #result,msg_data=mail.uid('fetch',uid,'(RFC822)')
-  result,msg_data=mail.uid('fetch',uid,'(BODY.PEEK[])')
-  if result != "OK":
-    print "Problem fetching message %s"%uid
-    continue
-  #result,message=mail.uid('STORE', uid, '-FLAGS', '(\SEEN)')
-  #if result != "OK":
-  #  print "Problem setting message %s unseen"%uid
-  anemail=msg_data[0][1]
-  name,link=get_name_and_link(anemail)
-  #print name
-  #print link
-  try:
-    momentIds=get_momentIds(link)
-    print momentIds
-    zipdata=get_photo_zip(momentIds)
-  except ValueError as e:
-    print repr(e)
-    continue
-  z=zipfile.ZipFile(io.BytesIO(zipdata))
-  print "Extracting files for %s"%name
-  z.extractall(os.path.join(config.output_path,name))
-  print "Pictures for %s extracted successfully!"%name
-  result,message=mail.uid('STORE', uid, '+FLAGS', '(\SEEN)')
-  if result != "OK":
-    print "Problem setting message %s seen"%uid
+if __name__=="__main__":
+  mail = imaplib.IMAP4_SSL(config.imap_server)
+  mail.login(config.mail_username,config.mail_password)
+  mail.select("inbox")
+  
+  result,search_results=mail.uid('search',None,'(UNSEEN SUBJECT "s Digest from ")')
+  message_uids=search_results[0].split()
+  print "%d new kaymbu digest messages"%len(message_uids)
+  for uid in message_uids:
+    print "Starting work on message %s"%uid
+    #result,msg_data=mail.uid('fetch',uid,'(RFC822)')
+    result,msg_data=mail.uid('fetch',uid,'(BODY.PEEK[])')
+    if result != "OK":
+      print "Problem fetching message %s"%uid
+      continue
+    #result,message=mail.uid('STORE', uid, '-FLAGS', '(\SEEN)')
+    #if result != "OK":
+    #  print "Problem setting message %s unseen"%uid
+    anemail=msg_data[0][1]
+    name,link=get_name_and_link(anemail)
+    #print name
+    #print link
+    try:
+      momentIds=get_momentIds(link)
+      print momentIds
+      zipdata=get_photo_zip(momentIds)
+    except ValueError as e:
+      print repr(e)
+      continue
+    z=zipfile.ZipFile(io.BytesIO(zipdata))
+    print "Extracting files for %s"%name
+    z.extractall(os.path.join(config.output_path,name))
+    print "Pictures for %s extracted successfully!"%name
+    result,message=mail.uid('STORE', uid, '+FLAGS', '(\SEEN)')
+    if result != "OK":
+      print "Problem setting message %s seen"%uid
