@@ -54,11 +54,17 @@ def get_momentIds(url):
   moments=re.search(r'\window\.momentIds = \[([\",a-f0-9]+)\];',r.text).group(1).replace('"','').split(',')
   return moments
 
+###
+# moments should be a list of moment ids.
+# returns a tuple of the file content and the Content-disposition header
+# If more thn one moment id is in the list, content will be a zip archive
+# the content-disposition header is useful for getting the server-assigned file name for the image
+###
 def get_photos(moments):
   r=requests.get("http://export.kaymbu.com/download/moments?%s"%'&'.join(moments))
   if (r.status_code != 200):
-    raise ValueError("Unsuccessful requesting zip archive. Code %d returned."%r.status_code)
-  return r.content,r.headers['Content-disposition']
+    raise ValueError("Unsuccessful requesting photo(s). Code %d returned."%r.status_code)
+  return r.content,r.headers['Content-Disposition']
 
 def get_mail_connection(imap_server,mail_username,mail_password):
   mail = imaplib.IMAP4_SSL(imap_server)
@@ -91,30 +97,31 @@ if __name__=="__main__":
     #print name
     #print link
     
+    path=os.path.join(config.output_path,name)
+    try:
+      os.mkdir(path)
+    except OSError:
+      pass
     try:
       momentIds=get_momentIds(link)
       print momentIds
-      if (len(momentIds)==1): #only one moment, so the server sends only the image data, not a zip file
-        photo,content_disposition=get_photos(momentIds)
-        filename=re.search(r'filename=(.*)',content_disposition).group(1)
-        path=os.path.join(config.output_path,name)
-        try:
-          os.mkdir(path)
-        except OSError:
-          pass
-        filepath=os.path.join(config.output_path,name,filename)
-        f=open(filepath,'w')
-        f.write(photo)
-        f.close()
-      else:  #more than one image, so we get a zip file
-        zipdata,_=get_photos(momentIds)
-        z=zipfile.ZipFile(io.BytesIO(zipdata))
-        print "Extracting files for %s"%name
-        z.extractall(os.path.join(config.output_path,name))
-        print "Pictures for %s extracted successfully!"%name
     except ValueError as e:
       print repr(e)
       continue
+    try:
+      for moment in momentIds:
+        photo,content_disposition=get_photos([moment])
+        filename=re.search(r'filename=(.*)',content_disposition).group(1)
+        filepath=os.path.join(path,filename)
+        if (os.path.isfile(filepath)):
+          filepath="%s-%s"%(filepath,moment) #the file exists, append the moment id to uniquify
+        f=open(filepath,'w')
+        f.write(photo)
+        f.close()
+    except ValueError as e:
+      print repr(e)
+      continue
+    print "Pictures for %s saved successfully!"%name
     result,message=mail.uid('STORE', uid, '+FLAGS', '(\SEEN)')
     if result != "OK":
       print "Problem setting message %s seen"%uid
