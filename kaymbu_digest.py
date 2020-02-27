@@ -17,10 +17,12 @@ import io
 import os
 import PIL.Image
 import PIL.ExifTags
+import getopt
+import sys
 
 import config
 
-def get_name_link_date(email_msg):
+def get_name_links_date(email_msg):
   email_message = email.message_from_string(email_msg)
   matches=re.search(r'.*\s*([A-Z][a-z]+)\'s Digest from .* for (\d?\d\/\d?\d\/\d\d)',email_message['Subject'])
   name=matches.group(1)
@@ -31,15 +33,10 @@ def get_name_link_date(email_msg):
   # Kaymbu emails contain invalid HTML, there is a closing html tag before the body, remove it and add it to the end
   fixed_html=decoded_html_block.replace("</html>","",1)+"</html>\r\n"
   soup=BeautifulSoup(fixed_html,'lxml')
-  link=None
-  link_tag=soup.find('a',text="Click here to download all images")
-  if (link_tag): #we have more than one moment/photo in this email
-    link=link_tag['href']
-  else: #there is only one moment/photo in this email
-    moment_img_tags=soup.findAll('img',alt="Download this moment")
-    if (len(moment_img_tags) == 1):
-      link=moment_img_tags[0].parent['href']
-  return (name,link,date)
+  links=[]
+  for moment_img_tag in soup.findAll('img',alt="Download this moment"):
+    links.append(moment_img_tags[0].parent['href'])
+  return (name,links,date)
 
 def get_first_html_block(email_message_instance):
     maintype = email_message_instance.get_content_maintype()
@@ -50,20 +47,13 @@ def get_first_html_block(email_message_instance):
     elif email_message_instance.get_content_type() == 'text/html':
         return email_message_instance.get_payload()
 
-def get_momentIds(url):
-  r=requests.get(url)
-  if (r.status_code != 200):
-    raise ValueError("Unsuccessful requesting moments page. Code %d returned."%r.status_code)
-  moments=re.search(r'\window\.momentIds = \[([\",a-f0-9]+)\];',r.text).group(1).replace('"','').split(',')
-  return moments
-
 ###
-# moments should be a moment id.
+# link should be a link to the image
 # returns a tuple of the file content and the Content-disposition header
 # the content-disposition header is useful for getting the server-assigned file name for the image
 ###
-def get_photo(moment):
-  r=requests.get("http://export.kaymbu.com/download/moments?%s"%moment)
+def get_photo(link):
+  r=requests.get(link)
   if (r.status_code != 200):
     raise ValueError("Unsuccessful requesting photo(s). Code %d returned."%r.status_code)
   return r.content,r.headers['Content-Disposition']
@@ -88,6 +78,13 @@ def get_exif(img):
   return exif
   
 if __name__=="__main__":
+  sys.exit(0)
+  dryrun=False
+  opts,args = getopt.getopt(sys.argv[1:],"d")
+  for opt in opts:
+    if opt == "-d":
+      dryrun=True
+    
   mail=get_mail_connection(config.imap_server,config.mail_username,config.mail_password)
   message_uids=get_new_digest_message_uids(mail)
   print "%d new kaymbu digest messages"%len(message_uids)
@@ -103,7 +100,7 @@ if __name__=="__main__":
     #if result != "OK":
     #  print "Problem setting message %s unseen"%uid
     anemail=msg_data[0][1]
-    name,link,date=get_name_link_date(anemail)
+    name,links,date=get_name_links_date(anemail)
     print "%s's photos from %s"%(name,date)
     
     path=os.path.join(config.output_path,name)
@@ -112,15 +109,9 @@ if __name__=="__main__":
     except OSError:
       pass
     try:
-      momentIds=get_momentIds(link)
-      print momentIds
-    except ValueError as e:
-      print repr(e)
-      continue
-    try:
       serial=0
-      for moment in momentIds:
-        photo,content_disposition=get_photo(moment)
+      for link in links:
+        photo,content_disposition=get_photo(link)
         image=PIL.Image.open(io.BytesIO(photo))
         exif_data=get_exif(image)
         try:
@@ -141,6 +132,7 @@ if __name__=="__main__":
       print repr(e)
       continue
     print "Pictures for %s saved successfully!"%name
-    result,message=mail.uid('STORE', uid, '+FLAGS', '(\SEEN)')
+    if (not dryrun):
+      result,message=mail.uid('STORE', uid, '+FLAGS', '(\SEEN)')
     if result != "OK":
       print "Problem setting message %s seen"%uid
