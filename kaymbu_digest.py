@@ -17,8 +17,9 @@ import io
 import os
 import PIL.Image
 import PIL.ExifTags
-import getopt
+import argparse
 import sys
+import hashlib
 
 import config
 
@@ -35,7 +36,7 @@ def get_name_links_date(email_msg):
   soup=BeautifulSoup(fixed_html,'lxml')
   links=[]
   for moment_img_tag in soup.findAll('img',alt="Download this moment"):
-    links.append(moment_img_tags[0].parent['href'])
+    links.append(moment_img_tag.parent['href'])
   return (name,links,date)
 
 def get_first_html_block(email_message_instance):
@@ -49,14 +50,13 @@ def get_first_html_block(email_message_instance):
 
 ###
 # link should be a link to the image
-# returns a tuple of the file content and the Content-disposition header
-# the content-disposition header is useful for getting the server-assigned file name for the image
+# returns the file content
 ###
 def get_photo(link):
   r=requests.get(link)
   if (r.status_code != 200):
     raise ValueError("Unsuccessful requesting photo(s). Code %d returned."%r.status_code)
-  return r.content,r.headers['Content-Disposition']
+  return r.content
 
 def get_mail_connection(imap_server,mail_username,mail_password):
   mail = imaplib.IMAP4_SSL(imap_server)
@@ -78,12 +78,13 @@ def get_exif(img):
   return exif
   
 if __name__=="__main__":
-  sys.exit(0)
   dryrun=False
-  opts,args = getopt.getopt(sys.argv[1:],"d")
-  for opt in opts:
-    if opt == "-d":
-      dryrun=True
+  arg_parser = argparse.ArgumentParser()
+  arg_parser.add_argument('--dryrun',action='store_true')
+  args = arg_parser.parse_args()
+  if (args.dryrun):
+    print "DRY RUN - messages will not be marked as read."
+    dryrun=True
     
   mail=get_mail_connection(config.imap_server,config.mail_username,config.mail_password)
   message_uids=get_new_digest_message_uids(mail)
@@ -111,7 +112,7 @@ if __name__=="__main__":
     try:
       serial=0
       for link in links:
-        photo,content_disposition=get_photo(link)
+        photo=get_photo(link)
         image=PIL.Image.open(io.BytesIO(photo))
         exif_data=get_exif(image)
         try:
@@ -123,11 +124,13 @@ if __name__=="__main__":
           photo_taken_at="20%02d-%02d-%02d-%03d"%(sdate[2],sdate[0],sdate[1],serial)
         filepath=os.path.join(path,photo_taken_at+".jpg")
         if (os.path.isfile(filepath)):
-          filepath="%s-%s"%(filepath,moment) #the file exists, append the moment id to uniquify
+          photo_hash = hashlib.sha1(photo).hexdigest()
+          #the file exists, append the sha1 hash to uniquify
+          filepath=os.path.join(path,photo_taken_at+"-"+photo_hash+".jpg")
         f=open(filepath,'w')
         f.write(photo)
         f.close()
-        print "Moment %s saved at %s"%(moment,filepath)
+        print "Moment saved at %s"%filepath
     except ValueError as e:
       print repr(e)
       continue
